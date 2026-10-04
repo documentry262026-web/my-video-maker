@@ -9,7 +9,7 @@ from moviepy.editor import VideoFileClip, AudioFileClip, vfx
 
 # 👇 1. Yahan Apni 'AIzaSy...' wali Gemini Key daalo 👇
 API_KEYS = [
-    "AQ.Ab8RN6LfAGekryAEuY_0KtnAkhUxW66dCH8U0Ah9Ik7ZMUARIA"  
+    "AQ.Ab8RN6LBZZcA5fo_0P90DIOvPSGzYUaQaA3W30AYMsf7LjoWVg"  
 ]
 
 # 👇 2. Pixabay API Key (Set hai) 👇
