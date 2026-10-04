@@ -9,7 +9,7 @@ from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips
 # ================= K E Y S =================
 # 👇 1. Yahan Apni wahi working 'AIzaSy...' wali Gemini Key daalo 👇
 API_KEYS = [
-    "AQ.Ab8RN6LBZZcA5fo_0P90DIOvPSGzYUaQaA3W30AYMsf7LjoWVg"  
+    "AQ.Ab8RN6JD7UflDlIwhNt6sZVcwhz1gLg4u5j9OWrOsLN8Pf8OnA"  
 ]
 
 # 👇 2. Tumhari Pixabay Key Set Hai 👇
