@@ -8,7 +8,7 @@ import imageio_ffmpeg
 import google.generativeai as genai
 
 # ================= K E Y S (PRE-CONFIGURED) =================
-GEMINI_KEY = "AQ.Ab8RN6JD7UflDlIwhNt6sZVcwhz1gLg4u5j9OWrOsLN8Pf8OnA"
+GEMINI_KEY = "AQ.Ab8RN6KV0l4xiNErXEFyaXKXcs247PHWb2TSAIZ5ZAQ_QNAowA"
 PIXABAY_API_KEY = "57871281-bac58345c5fba7b07f0655556"
 
 # ================= 1. GEMINI 3.6 FLASH SCRIPT =================
