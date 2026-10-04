@@ -6,25 +6,29 @@ import requests
 import google.generativeai as genai
 from moviepy.editor import VideoFileClip, AudioFileClip, vfx
 
+# 👇 1. Yahan Apni 'AIzaSy...' wali Gemini Key daalo 👇
 API_KEYS = [
-    "AQ.Ab8RN6Jb3y0erqnciAMRCusCyaMHCluce0WxZT3LgqumT_T25g",
-    "AQ.Ab8RN6JcUjFt1arWGHmHwe-ojDdME_l4Y0g2PTb3U68m0ZmnTg",
-    "AQ.Ab8RN6IAm1fDDXSVKRiOfKolqq6WstM27G6JoCzUknR08IyP9w"
+    "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"  
 ]
-PINTEREST_TOKEN = "pina_AMAXVNAYAAZESBIAGAAGCD617W3QFIIBACGSPAWX3VG25LPYTPNGSWWJNNFMJBKIYX220ZMIWADURZLCPB5LILLQLUPLKCQA"
+
+# 👇 2. Tumhari Pixabay API Key lag gayi hai 👇
+PIXABAY_API_KEY = "57871281-bac58345c5fba7b07f0655556"
 
 def generate_script(topic, duration):
     target_words = int(duration) * 2
     prompt = f"Write a voiceover script about '{topic}'. Language: Hinglish. Length: {target_words} words. Only return the spoken script text, no formatting."
+    last_error = ""
     for key in API_KEYS:
         try:
             genai.configure(api_key=key)
+            # STRICTLY GEMINI 3.6 FLASH (Tumhari instruction)
             model = genai.GenerativeModel('gemini-3.6-flash')
             response = model.generate_content(prompt)
             return response.text.strip()
-        except Exception:
+        except Exception as e:
+            last_error = str(e)
             continue
-    return "Error"
+    return f"Error: {last_error}"
 
 async def create_audio(text, voice):
     output_file = "voiceover.mp3"
@@ -32,21 +36,25 @@ async def create_audio(text, voice):
     await communicate.save(output_file)
     return output_file
 
-def get_pinterest_videos(query):
-    url = "https://api.pinterest.com/v5/search/partner/pins"
-    headers = {"Authorization": f"Bearer {PINTEREST_TOKEN}", "Content-Type": "application/json"}
-    params = {"term": query, "country_code": "US"}
+# Pinterest/Pexels ki jagah Pixabay ka 100% working function
+def get_pixabay_videos(query):
+    # Pixabay video API
+    url = f"https://pixabay.com/api/videos/?key={PIXABAY_API_KEY}&q={query} aesthetic&per_page=3"
+    
     try:
-        response = requests.get(url, headers=headers, params=params)
+        response = requests.get(url)
+        if response.status_code != 200:
+            return []
+            
         data = response.json()
         video_urls = []
-        for pin in data.get("items", []):
-            media = pin.get("media", {})
-            if "videos_list" in media:
-                best = list(media["videos_list"].values())[-1]
-                if "url" in best: video_urls.append(best["url"])
-            elif "video_url" in pin:
-                video_urls.append(pin.get("video_url"))
+        for hit in data.get("hits", []):
+            videos = hit.get("videos", {})
+            # Medium ya Large quality ki video link nikalna
+            if "medium" in videos and "url" in videos["medium"]:
+                video_urls.append(videos["medium"]["url"])
+            elif "large" in videos and "url" in videos["large"]:
+                video_urls.append(videos["large"]["url"])
         return video_urls
     except:
         return []
@@ -75,9 +83,9 @@ def assemble_video(audio_path, video_urls, ratio):
     return output
 
 st.set_page_config(page_title="My Video Maker", page_icon="🎬", layout="centered")
-st.title("🎬 My Free Video Maker")
+st.title("🎬 My Free Video Maker (Pixabay Edition)")
 
-topic = st.text_input("1. Topic", placeholder="Aesthetic tech setup, Gym workout...")
+topic = st.text_input("1. Topic", placeholder="Aesthetic nature, Gym workout, Rain...")
 ratio = st.radio("2. Ratio", ["9:16 (Shorts)", "16:9 (YouTube)"])
 duration = st.slider("3. Duration (sec)", 10, 30, 15, 5)
 voice_choice = st.radio("4. Voiceover", ["Male Hinglish", "Female Hinglish"])
@@ -90,26 +98,26 @@ if st.button("🚀 Generate Video", type="primary"):
             st.write("1. Gemini AI Script likh raha hai... ✍️")
             script = generate_script(topic, duration)
             
-            if script == "Error":
+            if "Error:" in script:
                 status.update(label="Error", state="error")
-                st.error("AI Script fail ho gayi.")
+                st.error(f"AI Script fail ho gayi. Asli wajah: {script}")
             else:
                 st.write("2. Voiceover ban raha hai... 🎙️")
                 voice_id = "hi-IN-MadhurNeural" if "Male" in voice_choice else "hi-IN-SwaraNeural"
                 audio_path = asyncio.run(create_audio(script, voice_id))
                 
-                st.write("3. Pinterest se Video aa raha hai... 📌")
-                video_urls = get_pinterest_videos(topic)
+                st.write("3. Pixabay se Aesthetic Video fetch ho raha hai... 🎥")
+                video_urls = get_pixabay_videos(topic)
                 
                 if not video_urls:
                     status.update(label="Partial Success", state="complete")
-                    st.warning("Pinterest Video nahi mila. Sirf Audio sun lo.")
+                    st.warning("Video fetch fail ho gaya. Topic change karke dekho (e.g. 'nature' ya 'city'). Sirf Audio ready hai.")
                     st.audio(audio_path)
                 else:
-                    st.write("4. Final Video edit ho raha hai (is process mein 1-2 min lagenge)... 🎬")
+                    st.write("4. Final Video edit ho raha hai (1-2 min lagenge)... 🎬")
                     final_video = assemble_video(audio_path, video_urls, ratio)
                     
                     status.update(label="🎉 Video Ready!", state="complete")
-                    st.success("Video successfully generate ho gaya!")
+                    st.success("Bhai, tumhara video successfully generate ho gaya!")
                     st.text_area("Generated Script", script, height=150)
                     st.video(final_video)
