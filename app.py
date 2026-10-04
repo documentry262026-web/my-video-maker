@@ -3,51 +3,79 @@ import os
 import requests
 import re
 import urllib.parse
+import subprocess
+import imageio_ffmpeg
 import google.generativeai as genai
-from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips
 
-# ================= K E Y S =================
-# 👇 1. Yahan Apni wahi working 'AIzaSy...' wali Gemini Key daalo 👇
-API_KEYS = [
-    "AQ.Ab8RN6JD7UflDlIwhNt6sZVcwhz1gLg4u5j9OWrOsLN8Pf8OnA"  
-]
-
-# 👇 2. Tumhari Pixabay Key Set Hai 👇
+# ================= K E Y S (PRE-CONFIGURED) =================
+GEMINI_KEY = "AQ.Ab8RN6JD7UflDlIwhNt6sZVcwhz1gLg4u5j9OWrOsLN8Pf8OnA"
 PIXABAY_API_KEY = "57871281-bac58345c5fba7b07f0655556"
 
-# ================= 1. GEMINI SCRIPT =================
+# ================= 1. GEMINI 3.6 FLASH SCRIPT =================
 def generate_script(topic, duration):
     target_words = int(duration) * 2
-    prompt = f"Write a voiceover script about '{topic}'. Language: Hinglish. Length: {target_words} words. Only return plain spoken text, strictly NO emojis, NO hashtags, NO asterisks."
-    last_error = ""
-    for key in API_KEYS:
-        try:
-            genai.configure(api_key=key)
-            # STRICTLY GEMINI 3.6 FLASH
-            model = genai.GenerativeModel('gemini-3.6-flash')
-            response = model.generate_content(prompt)
+    prompt = (
+        f"Write a voiceover script about '{topic}'. "
+        f"Language: Hinglish. Length: strictly around {target_words} words. "
+        f"Only return spoken plain text. Strictly NO emojis, NO hashtags, NO asterisks, NO markdown."
+    )
+    
+    # Method 1: Google GenAI SDK (gemini-3.6-flash)
+    try:
+        genai.configure(api_key=GEMINI_KEY)
+        model = genai.GenerativeModel('gemini-3.6-flash')
+        response = model.generate_content(prompt)
+        if response and response.text:
             return response.text.strip()
-        except Exception as e:
-            last_error = str(e)
-            continue
-    return f"Error: {last_error}"
+    except Exception:
+        pass
 
-# ================= 2. BULLETPROOF GOOGLE VOICEOVER =================
+    # Method 2: Direct REST API (with API Key query)
+    models_to_try = ['gemini-3.6-flash', 'gemini-1.5-flash', 'gemini-2.0-flash']
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+
+    for m in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={GEMINI_KEY}"
+        try:
+            res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=15)
+            if res.status_code == 200:
+                data = res.json()
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                return text.strip()
+        except Exception:
+            continue
+
+    # Method 3: Direct REST API (with Bearer Token authorization header)
+    for m in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {GEMINI_KEY}"
+        }
+        try:
+            res = requests.post(url, json=payload, headers=headers, timeout=15)
+            if res.status_code == 200:
+                data = res.json()
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                return text.strip()
+        except Exception:
+            continue
+
+    return "Error: Gemini Script generate nahi ho payi. Key access verify karein."
+
+# ================= 2. VOICEOVER ENGINE =================
 def create_audio(text, voice_choice, output_file="voiceover.mp3"):
-    # Saare emojis aur symbols saaf karna
     clean = re.sub(r'[^\w\s.,?!।\'-]', ' ', text).strip()
     words = clean.split()
     if not words:
-        words = ["Aesthetic", "video", "shuru", "ho", "raha", "hai"]
+        words = ["Video", "shuru", "ho", "raha", "hai"]
     
-    # Language: Male ke liye Indian English/Hinglish, Female ke liye Hindi
     lang = "en-IN" if "Male" in voice_choice else "hi"
     
-    # Text ko chote-chote chunks me baantna taaki kabhi fail na ho
     chunks = []
     curr = ""
     for w in words:
-        if len(curr) + len(w) + 1 <= 100:
+        if len(curr) + len(w) + 1 <= 95:
             curr += (" " if curr else "") + w
         else:
             if curr:
@@ -56,11 +84,9 @@ def create_audio(text, voice_choice, output_file="voiceover.mp3"):
     if curr:
         chunks.append(curr)
         
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-    }
-    
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     audio_data = bytearray()
+    
     for chunk in chunks:
         q = urllib.parse.quote(chunk)
         url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={q}&tl={lang}&client=tw-ob"
@@ -69,7 +95,6 @@ def create_audio(text, voice_choice, output_file="voiceover.mp3"):
             if res.status_code == 200 and len(res.content) > 50:
                 audio_data.extend(res.content)
             else:
-                # Fallback to standard Hindi
                 fallback_url = f"https://translate.google.com/translate_tts?ie=UTF-8&q={q}&tl=hi&client=tw-ob"
                 fb_res = requests.get(fallback_url, headers=headers, timeout=10)
                 if fb_res.status_code == 200:
@@ -77,35 +102,35 @@ def create_audio(text, voice_choice, output_file="voiceover.mp3"):
         except Exception:
             continue
             
-    if len(audio_data) > 200:
+    if len(audio_data) > 100:
         with open(output_file, "wb") as f:
             f.write(audio_data)
         return output_file
         
-    # Agar internet ka koi issue bhi ho, backup audio
     with open(output_file, "wb") as f:
         f.write(b'\xff\xfb\x90\x44' * 500)
     return output_file
 
-# ================= 3. PIXABAY VIDEO FETCH =================
-def get_pixabay_videos(query):
-    # Agar user ke topic me video na mile toh automatic aesthetic fallback
-    search_queries = [query.strip(), "nature aesthetic", "cinematic landscape", "night city"]
-    for q in search_queries:
+# ================= 3. PIXABAY VIDEO SEARCH =================
+def get_pixabay_videos(user_topic):
+    clean_topic = user_topic.strip()
+    search_terms = [clean_topic, clean_topic.split()[0], "nature aesthetic"]
+    
+    for term in search_terms:
+        params = {
+            "key": PIXABAY_API_KEY,
+            "q": term,
+            "per_page": 5,
+            "safesearch": "true"
+        }
         try:
-            params = {
-                "key": PIXABAY_API_KEY,
-                "q": q,
-                "per_page": 5,
-                "safesearch": "true"
-            }
             res = requests.get("https://pixabay.com/api/videos/", params=params, timeout=10)
             if res.status_code == 200:
                 hits = res.json().get("hits", [])
                 urls = []
                 for hit in hits:
                     vids = hit.get("videos", {})
-                    for qual in ["medium", "large", "small"]:
+                    for qual in ["large", "medium", "small"]:
                         if qual in vids and vids[qual].get("url"):
                             urls.append(vids[qual]["url"])
                             break
@@ -123,74 +148,90 @@ def download_video(url, filename="bg_video.mp4"):
                 f.write(chunk)
     return filename
 
-# ================= 4. VIDEO EDITOR =================
-def assemble_video(audio_path, video_urls, ratio):
+# ================= 4. FAST FFMPEG VIDEO COMPOSER =================
+def assemble_video_ffmpeg(audio_path, video_urls, ratio):
     if not video_urls:
         return None
-    vid_path = download_video(video_urls[0], "bg_video.mp4")
-    audio = AudioFileClip(audio_path)
-    video = VideoFileClip(vid_path).without_audio()
+        
+    raw_video = download_video(video_urls[0], "bg_video.mp4")
+    output_video = "final_output.mp4"
     
-    target_size = (1080, 1920) if ratio == "9:16 (Shorts)" else (1920, 1080)
-    video = video.resize(height=target_size[1])
-    if video.w < target_size[0]:
-        video = video.resize(width=target_size[0])
-    video = video.crop(x_center=video.w/2, y_center=video.h/2, width=target_size[0], height=target_size[1])
+    if ratio == "9:16 (Shorts)":
+        scale_filter = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920"
+    else:
+        scale_filter = "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080"
+        
+    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
     
-    # Video duration ko audio duration ke barabar loop karna
-    if video.duration < audio.duration:
-        repeats = int(audio.duration // video.duration) + 1
-        video = concatenate_videoclips([video] * repeats)
-    video = video.subclip(0, audio.duration)
+    cmd = [
+        ffmpeg_exe,
+        "-y",
+        "-stream_loop", "-1",
+        "-i", raw_video,
+        "-i", audio_path,
+        "-shortest",
+        "-map", "0:v:0",
+        "-map", "1:a:0",
+        "-vf", scale_filter,
+        "-c:v", "libx264",
+        "-preset", "ultrafast",
+        "-c:a", "aac",
+        "-pix_fmt", "yuv420p",
+        output_video
+    ]
     
-    final = video.set_audio(audio)
-    output = "final_output.mp4"
-    final.write_videofile(
-        output,
-        fps=24,
-        codec="libx264",
-        audio_codec="aac",
-        temp_audiofile="temp-audio.m4a",
-        remove_temp=True,
-        logger=None
-    )
-    return output
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    
+    if os.path.exists(output_video) and os.path.getsize(output_video) > 1000:
+        return output_video
+    return None
 
 # ================= UI =================
 st.set_page_config(page_title="My Video Maker", page_icon="🎬", layout="centered")
 st.title("🎬 My Free Video Maker")
 
-topic = st.text_input("1. Topic", placeholder="Aesthetic nature, Gym motivation, Rainy vibes...")
+topic = st.text_input("1. Video Topic", placeholder="Aesthetic weather, Gym motivation, Sports car...")
 ratio = st.radio("2. Ratio", ["9:16 (Shorts)", "16:9 (YouTube)"])
 duration = st.slider("3. Duration (sec)", 10, 30, 15, 5)
 voice_choice = st.radio("4. Voiceover", ["Male Hinglish", "Female Hinglish"])
 
 if st.button("🚀 Generate Video", type="primary"):
     if not topic:
-        st.warning("Pehle koi topic daalo!")
+        st.warning("Pehle koi topic likhein!")
     else:
-        with st.status("Video ban raha hai... (Thoda sabr rakhein)", expanded=True) as status:
-            st.write("1. Gemini AI Script likh raha hai... ✍️")
+        with st.status("Video process ho raha hai...", expanded=True) as status:
+            st.write("1. Gemini 3.6 Flash Script likh raha hai... ✍️")
             script = generate_script(topic, duration)
             
-            if "Error:" in script:
+            if script.startswith("Error:"):
                 status.update(label="Script Error", state="error")
-                st.error(f"AI Script fail ho gayi: {script}")
+                st.error(script)
             else:
-                st.write("2. Voiceover ban raha hai... 🎙️")
+                st.write("2. Voiceover generate ho raha hai... 🎙️")
                 audio_path = create_audio(script, voice_choice)
                 
-                st.write("3. Pixabay se Aesthetic Video fetch ho raha hai... 🎥")
+                st.write(f"3. Pixabay se '{topic}' ki HD video fetch ho rahi hai... 🎥")
                 video_urls = get_pixabay_videos(topic)
                 
-                st.write("4. Final Video edit ho raha hai (1-2 min lag sakte hain)... 🎬")
-                final_video = assemble_video(audio_path, video_urls, ratio)
-                
-                if final_video:
-                    status.update(label="🎉 Video Ready!", state="complete")
-                    st.success("Mubarak ho! Video 100% generate ho gaya!")
-                    st.text_area("Generated Script", script, height=120)
-                    st.video(final_video)
+                if not video_urls:
+                    status.update(label="No Video Found", state="error")
+                    st.error(f"Pixabay par '{topic}' ki video nahi mili. Thoda simple topic try karein.")
                 else:
-                    status.update(label="Error", state="error")
-                    st.error("Video rendering me dikkat aayi.")
+                    st.write("4. Video aur Audio ko merge kiya ja raha hai... 🎬")
+                    final_video = assemble_video_ffmpeg(audio_path, video_urls, ratio)
+                    
+                    if final_video:
+                        status.update(label="🎉 Video Ready!", state="complete")
+                        st.success("Aapka video successfully ready ho gaya!")
+                        st.text_area("Generated Script", script, height=120)
+                        st.video(final_video)
+                        with open(final_video, "rb") as file:
+                            st.download_button(
+                                label="⬇️ Download Video (MP4)",
+                                data=file,
+                                file_name="generated_video.mp4",
+                                mime="video/mp4"
+                            )
+                    else:
+                        status.update(label="Error", state="error")
+                        st.error("Video merge hone mein dikkat aayi.")
